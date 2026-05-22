@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useEffect, useCallback } from "react";
 import { ElementType, CONTAINER_TYPES } from "@/types";
 import { useEditorStore } from "@/store/editorStore";
 import { useDroppable } from "@dnd-kit/core";
@@ -108,6 +109,32 @@ const ElementRenderer: React.FC<ElementRendererProps> = ({ elementId, isRoot, re
         opacity: layout.opacity ?? 1,
         transform: layout.rotation ? `rotate(${layout.rotation}deg)` : undefined,
     };
+
+    // ─── Animation support ───
+    const anim = element.animation;
+    const hasAnim = anim && anim.type !== "none";
+    let animClassName = "";
+
+    if (hasAnim) {
+        const iterCount = anim.iterationCount === "infinite" ? "infinite" : String(anim.iterationCount ?? 1);
+        const animProp = `${anim.type} ${anim.duration}s ${anim.easing} ${anim.delay}s ${iterCount} ${anim.direction} ${anim.fillMode}`;
+
+        if (anim.trigger === "onLoad" || anim.trigger === "continuous") {
+            mergedStyles.animation = animProp;
+        } else if (anim.trigger === "onHover") {
+            // Hover animations applied via class — see globals.css
+            animClassName = "anim-hover-ready";
+            // Store animation data as CSS custom properties for the hover rule
+            mergedStyles["--anim-name" as string] = anim.type;
+            mergedStyles["--anim-duration" as string] = `${anim.duration}s`;
+            mergedStyles["--anim-easing" as string] = anim.easing;
+            mergedStyles["--anim-delay" as string] = `${anim.delay}s`;
+            mergedStyles["--anim-iter" as string] = iterCount;
+            mergedStyles["--anim-dir" as string] = anim.direction;
+            mergedStyles["--anim-fill" as string] = anim.fillMode;
+        }
+        // onScroll and onClick are handled via event handlers below
+    }
 
     const handleClick = (e: React.MouseEvent) => {
         if (readOnly) return;
@@ -236,14 +263,53 @@ const ElementRenderer: React.FC<ElementRendererProps> = ({ elementId, isRoot, re
     const selectionClass = isSelected ? "element-selected" : "";
     const dropTargetClass = !readOnly && isContainer && isDropOver ? "element-drop-target" : "";
 
+    // ─── Scroll & Click animation triggers ───
+    const elRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const node = elRef.current;
+        if (!node || !hasAnim) return;
+        if (anim.trigger === "onScroll") {
+            const observer = new IntersectionObserver(
+                (entries) => {
+                    entries.forEach((entry) => {
+                        if (entry.isIntersecting) {
+                            const iterCount = anim.iterationCount === "infinite" ? "infinite" : String(anim.iterationCount ?? 1);
+                            node.style.animation = `${anim.type} ${anim.duration}s ${anim.easing} ${anim.delay}s ${iterCount} ${anim.direction} ${anim.fillMode}`;
+                            observer.unobserve(node);
+                        }
+                    });
+                },
+                { threshold: (anim.scrollOffset ?? 20) / 100 }
+            );
+            observer.observe(node);
+            return () => observer.disconnect();
+        }
+    }, [hasAnim, anim]);
+
+    const handleAnimClick = useCallback((e: React.MouseEvent) => {
+        if (!hasAnim || anim.trigger !== "onClick") return;
+        const node = elRef.current;
+        if (!node) return;
+        node.style.animation = "none";
+        void node.offsetHeight;
+        const iterCount = anim.iterationCount === "infinite" ? "infinite" : String(anim.iterationCount ?? 1);
+        node.style.animation = `${anim.type} ${anim.duration}s ${anim.easing} ${anim.delay}s ${iterCount} ${anim.direction} ${anim.fillMode}`;
+    }, [hasAnim, anim]);
+
+    const setRef = useCallback((node: HTMLDivElement | null) => {
+        (elRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+        if (isContainer && !readOnly && setDropRef) setDropRef(node);
+    }, [isContainer, readOnly, setDropRef]);
+
     return (
         <div
-            ref={isContainer && !readOnly ? setDropRef : undefined}
+            ref={setRef}
             data-element-id={elementId}
             data-element-type={element.type}
-            className={`element-wrapper ${selectionClass} element-hoverable ${layout.locked ? "element-locked" : ""} ${dropTargetClass}`}
+            className={`element-wrapper ${selectionClass} element-hoverable ${layout.locked ? "element-locked" : ""} ${dropTargetClass} ${animClassName}`}
             style={mergedStyles}
-            onClick={handleClick}
+            onClick={(e) => { handleClick(e); handleAnimClick(e); }}
         >
             {renderContent()}
             {isSelected && !layout.locked && !readOnly && (
