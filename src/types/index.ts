@@ -1,9 +1,72 @@
 // Type definitions for the serializable editor state
 
+// ─── Animation System Types ───
+
+export type AnimationTrigger =
+    | "onLoad"
+    | "onScroll"
+    | "onHover"
+    | "onClick"
+    | "continuous";
+
+export type AnimationEasing =
+    | "linear"
+    | "ease"
+    | "ease-in"
+    | "ease-out"
+    | "ease-in-out"
+    | "cubic-bezier(0.4, 0, 0.2, 1)"
+    | "cubic-bezier(0.0, 0, 0.2, 1)"
+    | "cubic-bezier(0.4, 0, 1, 1)"
+    | "cubic-bezier(0.68, -0.55, 0.27, 1.55)"
+    | "cubic-bezier(0.22, 1, 0.36, 1)"
+    | string;
+
+export type AnimationType =
+    // Basic — Entrance
+    | "fadeIn" | "fadeInUp" | "fadeInDown" | "fadeInLeft" | "fadeInRight"
+    | "slideInUp" | "slideInDown" | "slideInLeft" | "slideInRight"
+    | "scaleIn" | "scaleInUp" | "scaleInDown"
+    | "bounceIn" | "flipInX" | "flipInY"
+    | "rotateIn" | "zoomIn"
+    // Basic — Attention
+    | "pulse" | "bounce" | "shake" | "wobble" | "swing" | "flash" | "heartbeat" | "rubberBand"
+    // Basic — Exit
+    | "fadeOut" | "fadeOutUp" | "fadeOutDown"
+    | "slideOutUp" | "slideOutDown"
+    | "scaleOut" | "zoomOut"
+    // Advanced — Text-specific
+    | "typewriter" | "textReveal" | "textGlow" | "textGradientShift" | "letterSpacing"
+    // Advanced — Transform
+    | "float" | "spin" | "morphShadow" | "parallax" | "tilt3D"
+    | "skewIn" | "blurIn" | "glitchEffect"
+    // Advanced — Background/Color
+    | "colorShift" | "gradientFlow" | "backgroundZoom"
+    // Advanced — Border/Clip
+    | "borderDraw" | "clipReveal" | "maskWipe"
+    // None
+    | "none";
+
 export interface AnimationData {
-    type: "fade" | "slide" | "scale" | "bounce" | "none";
+    type: AnimationType;
+    trigger: AnimationTrigger;
     duration: number;
-    delay?: number;
+    delay: number;
+    easing: AnimationEasing;
+    iterationCount: number | "infinite";
+    direction: "normal" | "reverse" | "alternate" | "alternate-reverse";
+    fillMode: "none" | "forwards" | "backwards" | "both";
+    // Scroll-specific
+    scrollOffset?: number;
+    // Text-specific
+    textSpeed?: number;
+    textStagger?: number;
+    // Transform
+    translateDistance?: number;
+    scaleFrom?: number;
+    rotateAngle?: number;
+    // Intensity (shake, wobble, etc.)
+    intensity?: number;
 }
 
 export interface ActionData {

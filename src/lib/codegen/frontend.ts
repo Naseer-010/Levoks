@@ -1,6 +1,7 @@
 import { ElementNode, Page } from "@/types";
 import { FlowGraph, Flow, ApiCallStep, NavigateStep } from "@/types/ir";
 import { ElementWiring, EndpointTarget, PageTarget } from "./connectionResolver";
+import { generateAnimationCSS, generateAnimationUseEffect } from "./animationCodegen";
 
 type FrontendCodeResult = {
     files: Record<string, string>;
@@ -354,6 +355,33 @@ export function generateFrontendProject(
         jsxParts.push(renderElement(el, true, cssParts, "jsx", flowMap, codegenElementsById));
     });
 
+    // ─── Animation CSS Generation ───
+    const animKeyframes = new Set<string>();
+    const animClassRules: string[] = [];
+    const animJsElements: { className: string; anim: import("@/types").AnimationData }[] = [];
+
+    const collectAnimations = (els: ElementNode[]) => {
+        for (const el of els) {
+            if (el.animation && el.animation.type !== "none") {
+                const cn = classNameFor(el);
+                const { keyframeCss, classCss, needsJs } = generateAnimationCSS(el, cn);
+                if (keyframeCss) animKeyframes.add(keyframeCss);
+                if (classCss) animClassRules.push(classCss);
+                if (needsJs) animJsElements.push({ className: cn, anim: el.animation });
+            }
+            // Recurse into children
+            for (const childId of (el.children || [])) {
+                const child = codegenElementsById[childId];
+                if (child) collectAnimations([child]);
+            }
+        }
+    };
+    collectAnimations([...safeGlobal, ...allElements]);
+
+    const animationCss = animKeyframes.size > 0 || animClassRules.length > 0
+        ? `\n/* ═══ Animations ═══ */\n${Array.from(animKeyframes).join("\n")}\n${animClassRules.join("\n")}`
+        : "";
+
     const canvasWidth = Math.max(320, Number(canvasSettings.width) || 1280);
     const canvasHeight = Math.max(200, Number(canvasSettings.height) || 900);
     const bg = String(canvasSettings.backgroundColor || "#ffffff");
@@ -370,7 +398,7 @@ input:focus, textarea:focus { outline: 2px solid #6366f1; outline-offset: -1px; 
 hr { border: none; }
 `;
 
-    const css = `${baseCss}\n${Array.from(cssParts).join("\n")}`;
+    const css = `${baseCss}\n${Array.from(cssParts).join("\n")}${animationCss}`;
 
     const body = `<div class="page">${htmlParts.join("")}</div>`;
     const previewHtml = `<!doctype html>
@@ -389,11 +417,16 @@ hr { border: none; }
         ? flowGraph.flows.some((f) => f.steps.some((s) => s.type === "api_call"))
         : wirings && wirings.some((w) => w.target.kind === "endpoint");
     const apiImport = hasEndpointWirings ? 'import { apiFetch } from "./api.js";\n' : "";
+    // Generate animation useEffect code (inlined into App.jsx)
+    const animUseEffect = generateAnimationUseEffect(animJsElements);
+    const needsReactImport = animUseEffect.length > 0;
 
     const appJsx = `
+import React from "react";
 import "./styles.css";
 ${apiImport}
 export default function App() {
+${animUseEffect}
   return (
     <div className="page">
       ${jsxParts.join("\n      ")}
