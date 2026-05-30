@@ -96,8 +96,10 @@ const ElementRenderer: React.FC<ElementRendererProps> = ({ elementId, isRoot, re
     const isPositionedChild = resolvedPosition !== "static";
     const positionStyles: React.CSSProperties = isRoot
         ? { position: "absolute", left: `${layout.x}px`, top: `${layout.y}px`, width: widthPx, minHeight: heightPx, height: isTextLike ? "auto" : heightPx }
-        : { position: resolvedPosition, left: isPositionedChild ? `${layout.x}px` : undefined, top: isPositionedChild ? `${layout.y}px` : undefined,
-            width: String(element.styles.width || widthPx), minHeight: heightPx, height: isTextLike ? "auto" : String(element.styles.height || heightPx) };
+        : {
+            position: resolvedPosition, left: isPositionedChild ? `${layout.x}px` : undefined, top: isPositionedChild ? `${layout.y}px` : undefined,
+            width: String(element.styles.width || widthPx), minHeight: heightPx, height: isTextLike ? "auto" : String(element.styles.height || heightPx)
+        };
 
     const mergedStyles: React.CSSProperties = {
         ...element.styles as React.CSSProperties,
@@ -166,21 +168,27 @@ const ElementRenderer: React.FC<ElementRendererProps> = ({ elementId, isRoot, re
             ) : <Renderer elementIds={element.children} isRoot={false} readOnly={readOnly} />;
             case "stack": return <>{containerPlaceholder("Stack — elements stack vertically")}<Renderer elementIds={element.children} isRoot={false} readOnly={readOnly} /></>;
             case "title": {
-                const lvl = Math.min(Math.max(Number(element.props.level) || 2, 1), 6) as 1|2|3|4|5|6;
+                const lvl = Math.min(Math.max(Number(element.props.level) || 2, 1), 6) as 1 | 2 | 3 | 4 | 5 | 6;
                 const Tag = `h${lvl}` as `h${typeof lvl}`;
-                return <Tag className="el-title-inner" style={{ margin: 0, fontSize: "inherit", fontWeight: "inherit", color: "inherit", lineHeight: "inherit",
+                return <Tag className="el-title-inner" style={{
+                    margin: 0, fontSize: "inherit", fontWeight: "inherit", color: "inherit", lineHeight: "inherit",
                     textAlign: (element.styles.textAlign as React.CSSProperties["textAlign"]) || "left", fontFamily: String(element.styles.fontFamily || "inherit"),
                     letterSpacing: String(element.styles.letterSpacing || "normal"), textDecoration: String(element.styles.textDecoration || "none"),
-                    textTransform: (element.styles.textTransform as React.CSSProperties["textTransform"]) || "none" }}>
+                    textTransform: (element.styles.textTransform as React.CSSProperties["textTransform"]) || "none"
+                }}>
                     {String(element.props.content || "Add a Title")}</Tag>;
             }
-            case "text": return <p className="el-text-inner" style={{ margin: 0, textAlign: (element.styles.textAlign as React.CSSProperties["textAlign"]) || "left",
+            case "text": return <p className="el-text-inner" style={{
+                margin: 0, textAlign: (element.styles.textAlign as React.CSSProperties["textAlign"]) || "left",
                 fontFamily: String(element.styles.fontFamily || "inherit"), letterSpacing: String(element.styles.letterSpacing || "normal"),
-                textDecoration: String(element.styles.textDecoration || "none"), textTransform: (element.styles.textTransform as React.CSSProperties["textTransform"]) || "none" }}>
+                textDecoration: String(element.styles.textDecoration || "none"), textTransform: (element.styles.textTransform as React.CSSProperties["textTransform"]) || "none"
+            }}>
                 {String(element.props.content || "Text")}</p>;
-            case "paragraph": return <p className="el-paragraph-inner" style={{ margin: 0, textAlign: (element.styles.textAlign as React.CSSProperties["textAlign"]) || "left",
+            case "paragraph": return <p className="el-paragraph-inner" style={{
+                margin: 0, textAlign: (element.styles.textAlign as React.CSSProperties["textAlign"]) || "left",
                 fontFamily: String(element.styles.fontFamily || "inherit"), letterSpacing: String(element.styles.letterSpacing || "normal"),
-                textDecoration: String(element.styles.textDecoration || "none"), textTransform: (element.styles.textTransform as React.CSSProperties["textTransform"]) || "none" }}>
+                textDecoration: String(element.styles.textDecoration || "none"), textTransform: (element.styles.textTransform as React.CSSProperties["textTransform"]) || "none"
+            }}>
                 {String(element.props.content || "Paragraph text...")}</p>;
             case "button": return <button className="el-button-inner" onClick={handleReadOnlyAction} style={{
                 background: "inherit", backgroundColor: "inherit", color: "inherit", borderRadius: String(element.styles.borderRadius || "6px"),
@@ -188,10 +196,12 @@ const ElementRenderer: React.FC<ElementRendererProps> = ({ elementId, isRoot, re
                 width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center",
                 textAlign: (element.styles.textAlign as React.CSSProperties["textAlign"]) || "center", fontFamily: String(element.styles.fontFamily || "inherit"),
                 textTransform: (element.styles.textTransform as React.CSSProperties["textTransform"]) || "none", letterSpacing: String(element.styles.letterSpacing || "normal"),
-                padding: String(element.styles.padding || "0") }}>{String(element.props.label || "Button")}</button>;
+                padding: String(element.styles.padding || "0")
+            }}>{String(element.props.label || "Button")}</button>;
             case "image": return <img src={String(element.props.src || "")} alt={String(element.props.alt || "")} style={{
                 width: "100%", height: "100%", objectFit: (String(element.props.objectFit || "cover")) as React.CSSProperties["objectFit"],
-                borderRadius: String(element.styles.borderRadius || "0") }} />;
+                borderRadius: String(element.styles.borderRadius || "0")
+            }} />;
             case "video": return <div className="video-placeholder"><span className="video-icon">▶</span><span>Video Player</span>
                 <span className="video-meta">{element.props.autoplay ? "Autoplay" : ""} {element.props.loop ? "• Loop" : ""} {element.props.muted ? "• Muted" : ""}</span></div>;
             case "gallery": return element.children.length === 0 ? (
@@ -211,10 +221,12 @@ const ElementRenderer: React.FC<ElementRendererProps> = ({ elementId, isRoot, re
                 const cip = {
                     name: String(element.props.name || ""), placeholder: String(element.props.placeholder || ""),
                     required: Boolean(element.props.required), maxLength: Number(element.props.maxLength) > 0 ? Number(element.props.maxLength) : undefined,
-                    style: { width: "100%", height: "100%", padding: String(element.styles.padding || "12px 16px"), border: String(element.styles.border || "1px solid #d1d5db"),
+                    style: {
+                        width: "100%", height: "100%", padding: String(element.styles.padding || "12px 16px"), border: String(element.styles.border || "1px solid #d1d5db"),
                         borderRadius: String(element.styles.borderRadius || "8px"), fontSize: String(element.styles.fontSize || "14px"),
                         backgroundColor: String(element.styles.backgroundColor || "#fff"), boxShadow: String(element.styles.boxShadow || "none"),
-                        boxSizing: "border-box" as const, outline: "none", resize: "none" as const }, readOnly: true,
+                        boxSizing: "border-box" as const, outline: "none", resize: "none" as const
+                    }, readOnly: true,
                 };
                 return it === "textarea" ? <textarea {...cip} /> : <input {...cip} type={it} />;
             }
@@ -239,14 +251,14 @@ const ElementRenderer: React.FC<ElementRendererProps> = ({ elementId, isRoot, re
                 const plat = ["facebook", "twitter", "instagram", "linkedin", "youtube"].filter(p => element.props[p]);
                 return <div className="social-bar" style={{ display: "flex", gap: "12px", alignItems: "center", justifyContent: "center", height: "100%" }}>
                     {plat.length > 0 ? plat.map(p => <SocialIcon key={p} platform={p} size={Number(element.props.iconSize) || 24} style={String(element.props.iconStyle || "filled")} />) :
-                    <span className="social-placeholder">Add social links</span>}</div>;
+                        <span className="social-placeholder">Add social links</span>}</div>;
             }
             case "accordion": {
                 const expanded = Boolean(element.props.expanded);
                 return <div className="accordion-element"><div className="accordion-header"><span>{String(element.props.headerText || "Accordion Header")}</span>
                     <span className="accordion-arrow">{expanded ? "▼" : "▶"}</span></div>
                     {expanded && <div className="accordion-body">{element.children.length === 0 ? containerPlaceholder("Drop content here") :
-                    <Renderer elementIds={element.children} isRoot={false} readOnly={readOnly} />}</div>}</div>;
+                        <Renderer elementIds={element.children} isRoot={false} readOnly={readOnly} />}</div>}</div>;
             }
             case "tabs": {
                 const titles = String(element.props.tabTitles || "Tab 1,Tab 2,Tab 3").split(",");
@@ -254,7 +266,7 @@ const ElementRenderer: React.FC<ElementRendererProps> = ({ elementId, isRoot, re
                 return <div className="tabs-element"><div className="tabs-header">{titles.map((t, i) =>
                     <button key={i} className={`tab-btn ${i === active ? "active" : ""}`}>{t.trim()}</button>)}</div>
                     <div className="tabs-body">{element.children.length === 0 ? containerPlaceholder("Drop content in tab") :
-                    <Renderer elementIds={element.children} isRoot={false} readOnly={readOnly} />}</div></div>;
+                        <Renderer elementIds={element.children} isRoot={false} readOnly={readOnly} />}</div></div>;
             }
             default: return null;
         }

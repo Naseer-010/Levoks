@@ -118,8 +118,8 @@ export default function Home() {
         {/* Top Header */}
         <header className="editor-header">
           <div className="header-left">
-            <img src="/logo.svg" alt="RanDoseru" className="header-logo-img" width={28} height={28} />
-            <span className="header-title">RanDoseru</span>
+            <img src="/logo.svg" alt="Levoks" className="header-logo-img" width={28} height={28} />
+            <span className="header-title">Levoks</span>
             {isBackendMode && (
               <span className="header-mode-badge">Backend</span>
             )}
