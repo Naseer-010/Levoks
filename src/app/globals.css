@@ -6652,10 +6652,87 @@ body {
 
 /* ======================== ANIMATION KEYFRAMES (Canvas + Codegen) ======================== */
 
-/* Hover trigger: reads CSS custom properties set by Renderer */
-.anim-hover-ready:hover {
-  animation: var(--anim-name) var(--anim-duration) var(--anim-easing) var(--anim-delay) var(--anim-iter) var(--anim-dir) var(--anim-fill) !important;
+/* Hover animation is JS-driven via mouseenter/animationend in Renderer */
+
+/* ─── Canvas thin scrollbar ─── */
+.canvas-workspace::-webkit-scrollbar { width: 6px; height: 6px; }
+.canvas-workspace::-webkit-scrollbar-track { background: transparent; }
+.canvas-workspace::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+.canvas-workspace::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+.canvas-workspace { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.12) transparent; }
+
+/* ─── Canvas Height Resize Handle ─── */
+.canvas-height-handle {
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ns-resize;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  margin-top: -1px;
+  position: relative;
+  z-index: 5;
 }
+.canvas-height-handle:hover,
+.canvas-height-handle.active {
+  opacity: 1;
+}
+.canvas-height-handle-bar {
+  width: 48px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent, #6366f1);
+  transition: width 0.15s ease, background 0.15s ease;
+}
+.canvas-height-handle:hover .canvas-height-handle-bar,
+.canvas-height-handle.active .canvas-height-handle-bar {
+  width: 64px;
+  background: #818cf8;
+}
+
+/* ─── Canvas Resize Save/Cancel Prompt ─── */
+.canvas-resize-prompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 6px 12px;
+  background: var(--bg-2, #1e1e24);
+  border: 1px solid var(--border, #2e2e38);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  animation: fadeInUp 0.2s ease-out both;
+}
+.canvas-resize-label {
+  font-size: 11px;
+  color: var(--text-2, #a1a1aa);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  min-width: 48px;
+  text-align: center;
+}
+.canvas-resize-save,
+.canvas-resize-cancel {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 5px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.canvas-resize-save {
+  background: var(--accent, #6366f1);
+  color: #fff;
+}
+.canvas-resize-save:hover { background: #818cf8; }
+.canvas-resize-cancel {
+  background: transparent;
+  color: var(--text-3, #71717a);
+  border: 1px solid var(--border, #2e2e38);
+}
+.canvas-resize-cancel:hover { color: var(--text-2); border-color: var(--border-hover, #3e3e48); }
 
 /* Entrance */
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
