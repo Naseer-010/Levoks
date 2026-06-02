@@ -115,27 +115,15 @@ const ElementRenderer: React.FC<ElementRendererProps> = ({ elementId, isRoot, re
     // ─── Animation support ───
     const anim = element.animation;
     const hasAnim = anim && anim.type !== "none";
-    let animClassName = "";
 
-    if (hasAnim) {
-        const iterCount = anim.iterationCount === "infinite" ? "infinite" : String(anim.iterationCount ?? 1);
-        const animProp = `${anim.type} ${anim.duration}s ${anim.easing} ${anim.delay}s ${iterCount} ${anim.direction} ${anim.fillMode}`;
+    const buildAnimStr = useCallback(() => {
+        if (!anim || anim.type === "none") return "";
+        const iter = anim.iterationCount === "infinite" ? "infinite" : String(anim.iterationCount ?? 1);
+        return `${anim.type} ${anim.duration}s ${anim.easing} ${anim.delay}s ${iter} ${anim.direction} ${anim.fillMode}`;
+    }, [anim]);
 
-        if (anim.trigger === "onLoad" || anim.trigger === "continuous") {
-            mergedStyles.animation = animProp;
-        } else if (anim.trigger === "onHover") {
-            // Hover animations applied via class — see globals.css
-            animClassName = "anim-hover-ready";
-            // Store animation data as CSS custom properties for the hover rule
-            mergedStyles["--anim-name" as string] = anim.type;
-            mergedStyles["--anim-duration" as string] = `${anim.duration}s`;
-            mergedStyles["--anim-easing" as string] = anim.easing;
-            mergedStyles["--anim-delay" as string] = `${anim.delay}s`;
-            mergedStyles["--anim-iter" as string] = iterCount;
-            mergedStyles["--anim-dir" as string] = anim.direction;
-            mergedStyles["--anim-fill" as string] = anim.fillMode;
-        }
-        // onScroll and onClick are handled via event handlers below
+    if (hasAnim && (anim.trigger === "onLoad" || anim.trigger === "continuous")) {
+        mergedStyles.animation = buildAnimStr();
     }
 
     const handleClick = (e: React.MouseEvent) => {
@@ -275,19 +263,38 @@ const ElementRenderer: React.FC<ElementRendererProps> = ({ elementId, isRoot, re
     const selectionClass = isSelected ? "element-selected" : "";
     const dropTargetClass = !readOnly && isContainer && isDropOver ? "element-drop-target" : "";
 
-    // ─── Scroll & Click animation triggers ───
+    // ─── Hover, Scroll & Click animation triggers ───
     const elRef = useRef<HTMLDivElement>(null);
+    const animStrRef = useRef(buildAnimStr);
+    animStrRef.current = buildAnimStr;
 
     useEffect(() => {
         const node = elRef.current;
         if (!node || !hasAnim) return;
+
+        const cleanups: (() => void)[] = [];
+
+        if (anim.trigger === "onHover") {
+            const onEnter = () => {
+                node.style.animation = "none";
+                void node.offsetHeight;
+                node.style.animation = animStrRef.current();
+            };
+            const onEnd = () => { node.style.animation = ""; };
+            node.addEventListener("mouseenter", onEnter);
+            node.addEventListener("animationend", onEnd);
+            cleanups.push(() => {
+                node.removeEventListener("mouseenter", onEnter);
+                node.removeEventListener("animationend", onEnd);
+            });
+        }
+
         if (anim.trigger === "onScroll") {
             const observer = new IntersectionObserver(
                 (entries) => {
                     entries.forEach((entry) => {
                         if (entry.isIntersecting) {
-                            const iterCount = anim.iterationCount === "infinite" ? "infinite" : String(anim.iterationCount ?? 1);
-                            node.style.animation = `${anim.type} ${anim.duration}s ${anim.easing} ${anim.delay}s ${iterCount} ${anim.direction} ${anim.fillMode}`;
+                            node.style.animation = animStrRef.current();
                             observer.unobserve(node);
                         }
                     });
@@ -295,18 +302,20 @@ const ElementRenderer: React.FC<ElementRendererProps> = ({ elementId, isRoot, re
                 { threshold: (anim.scrollOffset ?? 20) / 100 }
             );
             observer.observe(node);
-            return () => observer.disconnect();
+            cleanups.push(() => observer.disconnect());
         }
-    }, [hasAnim, anim]);
 
-    const handleAnimClick = useCallback((e: React.MouseEvent) => {
-        if (!hasAnim || anim.trigger !== "onClick") return;
-        const node = elRef.current;
-        if (!node) return;
-        node.style.animation = "none";
-        void node.offsetHeight;
-        const iterCount = anim.iterationCount === "infinite" ? "infinite" : String(anim.iterationCount ?? 1);
-        node.style.animation = `${anim.type} ${anim.duration}s ${anim.easing} ${anim.delay}s ${iterCount} ${anim.direction} ${anim.fillMode}`;
+        if (anim.trigger === "onClick") {
+            const onClick = () => {
+                node.style.animation = "none";
+                void node.offsetHeight;
+                node.style.animation = animStrRef.current();
+            };
+            node.addEventListener("click", onClick);
+            cleanups.push(() => node.removeEventListener("click", onClick));
+        }
+
+        return () => cleanups.forEach(fn => fn());
     }, [hasAnim, anim]);
 
     const setRef = useCallback((node: HTMLDivElement | null) => {
@@ -319,9 +328,9 @@ const ElementRenderer: React.FC<ElementRendererProps> = ({ elementId, isRoot, re
             ref={setRef}
             data-element-id={elementId}
             data-element-type={element.type}
-            className={`element-wrapper ${selectionClass} element-hoverable ${layout.locked ? "element-locked" : ""} ${dropTargetClass} ${animClassName}`}
+            className={`element-wrapper ${selectionClass} element-hoverable ${layout.locked ? "element-locked" : ""} ${dropTargetClass}`}
             style={mergedStyles}
-            onClick={(e) => { handleClick(e); handleAnimClick(e); }}
+            onClick={handleClick}
         >
             {renderContent()}
             {isSelected && !layout.locked && !readOnly && (
