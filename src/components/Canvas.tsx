@@ -45,6 +45,12 @@ const Canvas: React.FC = () => {
     const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
     const selectionStart = useRef<{ x: number; y: number } | null>(null);
 
+    // Canvas height resize state
+    const [isResizingHeight, setIsResizingHeight] = useState(false);
+    const [pendingHeight, setPendingHeight] = useState<number | null>(null);
+    const resizeStartY = useRef<number>(0);
+    const resizeStartH = useRef<number>(0);
+
     // Context menu state
     const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; elementId: string } | null>(null);
 
@@ -658,18 +664,22 @@ const Canvas: React.FC = () => {
                 className="canvas-workspace"
                 onClick={() => { selectElement(null); setCtxMenu(null); }}
                 onContextMenu={handleContextMenu}
+                style={{ overflowY: "auto", overflowX: "auto" }}
             >
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: "60px" }}>
                 <div
                     ref={setRefs}
                     className={`canvas-page ${isOver ? "canvas-page-over" : ""}`}
                     style={{
                         width: `${canvasWidth}px`,
                         maxWidth: `${canvasWidth}px`,
-                        minHeight: `${canvasHeight}px`,
+                        minHeight: `${pendingHeight ?? canvasHeight}px`,
+                        height: `${pendingHeight ?? canvasHeight}px`,
                         transform: `scale(${zoom / 100})`,
                         transformOrigin: "top center",
                         background: canvasBackground,
                         backgroundColor: canvasHasGradient ? undefined : canvasBackground,
+                        overflow: "hidden",
                     }}
                     onPointerDown={handlePointerDown}
                     onClick={(e) => {
@@ -727,6 +737,42 @@ const Canvas: React.FC = () => {
                     ) : (
                         <Renderer elementIds={rootIds} isRoot={true} />
                     )}
+                </div>
+
+                {/* ─── Canvas Height Resize Handle ─── */}
+                <div
+                    className={`canvas-height-handle ${isResizingHeight ? "active" : ""}`}
+                    style={{ width: `${canvasWidth * (zoom / 100)}px` }}
+                    onPointerDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setIsResizingHeight(true);
+                        resizeStartY.current = e.clientY;
+                        resizeStartH.current = pendingHeight ?? canvasHeight;
+                        const onMove = (ev: PointerEvent) => {
+                            const dy = (ev.clientY - resizeStartY.current) / (zoom / 100);
+                            setPendingHeight(Math.max(200, Math.round(resizeStartH.current + dy)));
+                        };
+                        const onUp = () => {
+                            setIsResizingHeight(false);
+                            window.removeEventListener("pointermove", onMove);
+                            window.removeEventListener("pointerup", onUp);
+                        };
+                        window.addEventListener("pointermove", onMove);
+                        window.addEventListener("pointerup", onUp);
+                    }}
+                >
+                    <div className="canvas-height-handle-bar" />
+                </div>
+
+                {/* Save / Cancel prompt */}
+                {pendingHeight !== null && pendingHeight !== canvasHeight && !isResizingHeight && (
+                    <div className="canvas-resize-prompt">
+                        <span className="canvas-resize-label">{pendingHeight}px</span>
+                        <button className="canvas-resize-save" onClick={() => { updateCanvasSettings({ height: pendingHeight }); setPendingHeight(null); }}>Save</button>
+                        <button className="canvas-resize-cancel" onClick={() => setPendingHeight(null)}>Cancel</button>
+                    </div>
+                )}
                 </div>
 
                 {/* Context Menu */}
