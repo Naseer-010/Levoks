@@ -2,10 +2,10 @@
 
 import { useEditorStore } from "@/store/editorStore";
 import { AnimationData, ActionData, CONTAINER_TYPES, ElementNode } from "@/types";
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import {
     Eye, EyeOff, Lock, Unlock, Copy, Trash2, ChevronRight,
-    AlignLeft, AlignCenter, AlignRight, AlignJustify,
+    AlignLeft, AlignCenter, AlignRight, AlignJustify, Sun,
 } from "lucide-react";
 import AnimationPanel from "./AnimationPanel";
 
@@ -69,9 +69,6 @@ const parseNumericInput = (value: string): number | null => {
 };
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
-
-const createElementId = (): string =>
-    globalThis.crypto?.randomUUID?.() || `el_${Math.random().toString(36).slice(2, 10)}`;
 
 const getElementDisplayName = (label: string | undefined, type: string): string => {
     const trimmed = String(label || "").trim();
@@ -205,6 +202,19 @@ const ColorControl: React.FC<{
 
 // ─── Shadow Control (AE-style light angle + distance) ───
 
+const SHADOW_ANGLE_PRESETS = [
+    { label: "TL", value: 225 },
+    { label: "T", value: 270 },
+    { label: "TR", value: 315 },
+    { label: "L", value: 180 },
+    { label: "R", value: 0 },
+    { label: "BL", value: 135 },
+    { label: "B", value: 90 },
+    { label: "BR", value: 45 },
+];
+
+const normalizeAngle = (value: number): number => ((Math.round(value) % 360) + 360) % 360;
+
 function parseShadowValue(raw: string, isText = false): { enabled: boolean; angle: number; distance: number; blur: number; spread: number; color: string } {
     const defaults = { enabled: false, angle: 135, distance: 4, blur: 8, spread: 0, color: "rgba(0, 0, 0, 0.25)" };
     const val = String(raw || "").trim();
@@ -261,6 +271,8 @@ const ShadowControl: React.FC<{
         onChange(composeShadow(next, isTextShadow));
     };
 
+    const updateAngle = (value: number) => update({ angle: normalizeAngle(value) });
+
     const sliderBg = (val: number, min: number, max: number) => {
         const pct = ((val - min) / (max - min)) * 100;
         return { background: `linear-gradient(to right, var(--accent, #6366f1) ${pct}%, var(--bg-input, #2a2a35) ${pct}%)` };
@@ -291,38 +303,79 @@ const ShadowControl: React.FC<{
 
             {shadow.enabled && (
                 <div className="shadow-control-body">
-                    {/* Angle dial + distance */}
                     <div className="shadow-angle-row">
-                        <div className="shadow-angle-dial-wrap">
-                            <div
-                                className="shadow-angle-dial"
-                                onPointerDown={(e) => {
-                                    e.preventDefault();
-                                    const rect = e.currentTarget.getBoundingClientRect();
-                                    const cx = rect.left + rect.width / 2;
-                                    const cy = rect.top + rect.height / 2;
-                                    const calcAngle = (clientX: number, clientY: number) => {
-                                        const deg = Math.round(((Math.atan2(clientY - cy, clientX - cx) * 180) / Math.PI + 360) % 360);
-                                        update({ angle: deg });
-                                    };
-                                    calcAngle(e.clientX, e.clientY);
-                                    const onMove = (ev: PointerEvent) => calcAngle(ev.clientX, ev.clientY);
-                                    const onUp = () => {
-                                        window.removeEventListener("pointermove", onMove);
-                                        window.removeEventListener("pointerup", onUp);
-                                    };
-                                    window.addEventListener("pointermove", onMove);
-                                    window.addEventListener("pointerup", onUp);
-                                }}
-                            >
-                                <div
-                                    className="shadow-angle-indicator"
-                                    style={{ transform: `rotate(${shadow.angle}deg)` }}
+                        <div className="shadow-angle-panel">
+                            <div className="shadow-angle-dial-wrap">
+                                <button
+                                    type="button"
+                                    className="shadow-angle-dial"
+                                    aria-label={`Shadow angle ${shadow.angle} degrees`}
+                                    onPointerDown={(e) => {
+                                        e.preventDefault();
+                                        const rect = e.currentTarget.getBoundingClientRect();
+                                        const cx = rect.left + rect.width / 2;
+                                        const cy = rect.top + rect.height / 2;
+                                        const calcAngle = (clientX: number, clientY: number) => {
+                                            const deg = ((Math.atan2(clientY - cy, clientX - cx) * 180) / Math.PI + 360) % 360;
+                                            updateAngle(deg);
+                                        };
+                                        calcAngle(e.clientX, e.clientY);
+                                        const onMove = (ev: PointerEvent) => calcAngle(ev.clientX, ev.clientY);
+                                        const onUp = () => {
+                                            window.removeEventListener("pointermove", onMove);
+                                            window.removeEventListener("pointerup", onUp);
+                                        };
+                                        window.addEventListener("pointermove", onMove);
+                                        window.addEventListener("pointerup", onUp);
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+                                            e.preventDefault();
+                                            updateAngle(shadow.angle + (e.shiftKey ? 15 : 1));
+                                        }
+                                        if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+                                            e.preventDefault();
+                                            updateAngle(shadow.angle - (e.shiftKey ? 15 : 1));
+                                        }
+                                    }}
                                 >
-                                    <div className="shadow-angle-dot" />
-                                </div>
+                                    <span className="shadow-angle-axis shadow-angle-axis-horizontal" />
+                                    <span className="shadow-angle-axis shadow-angle-axis-vertical" />
+                                    <span
+                                        className="shadow-angle-indicator"
+                                        style={{ transform: `rotate(${shadow.angle}deg)` }}
+                                    >
+                                        <span className="shadow-angle-ray" />
+                                        <span className="shadow-angle-dot">
+                                            <Sun size={10} strokeWidth={2.4} />
+                                        </span>
+                                    </span>
+                                </button>
+                                <label className="shadow-angle-number">
+                                    <span>Angle</span>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        max={359}
+                                        step={1}
+                                        value={shadow.angle}
+                                        onChange={(e) => updateAngle(parseInt(e.target.value, 10) || 0)}
+                                    />
+                                </label>
                             </div>
-                            <span className="shadow-angle-value">{shadow.angle}°</span>
+                            <div className="shadow-angle-presets" aria-label="Shadow angle presets">
+                                {SHADOW_ANGLE_PRESETS.map((preset) => (
+                                    <button
+                                        type="button"
+                                        key={preset.label}
+                                        className={`shadow-angle-preset shadow-preset-${preset.label.toLowerCase()} ${shadow.angle === preset.value ? "active" : ""}`}
+                                        onClick={() => updateAngle(preset.value)}
+                                        title={`${preset.label} ${preset.value} degrees`}
+                                    >
+                                        {preset.label}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                         <div className="shadow-sliders">
                             <div className="shadow-slider-row">

@@ -613,7 +613,6 @@ body {
 .element-selected {
   outline: 2px solid var(--accent) !important;
   outline-offset: 0px !important;
-  box-shadow: 0 0 0 4px rgba(17, 109, 255, 0.12) !important;
 }
 
 .selection-box {
@@ -6902,66 +6901,174 @@ body {
 
 .shadow-angle-row {
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
   margin-bottom: 10px;
+}
+
+.shadow-angle-panel {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-shrink: 0;
 }
 
 .shadow-angle-dial-wrap {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   flex-shrink: 0;
 }
 
 .shadow-angle-dial {
-  width: 48px;
-  height: 48px;
+  width: 64px;
+  height: 64px;
+  padding: 0;
   border-radius: 50%;
-  border: 2px solid var(--border, #2e2e38);
-  background: var(--bg-input, #16161c);
+  border: 1px solid var(--border, #2e2e38);
+  background:
+    radial-gradient(circle at center, var(--bg-elevated, #1a1a22) 0 36%, transparent 37%),
+    conic-gradient(from 0deg, rgba(99, 102, 241, 0.22), rgba(99, 102, 241, 0.05), rgba(99, 102, 241, 0.22)),
+    var(--bg-input, #16161c);
   position: relative;
   cursor: pointer;
-  transition: border-color 0.15s ease;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.035);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
-.shadow-angle-dial:hover {
+.shadow-angle-dial:hover,
+.shadow-angle-dial:focus-visible {
   border-color: var(--accent, #6366f1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 0 0 3px var(--accent-soft, rgba(99, 102, 241, 0.16));
+  outline: none;
+}
+
+.shadow-angle-dial:active {
+  transform: scale(0.98);
+}
+
+.shadow-angle-axis {
+  position: absolute;
+  inset: 50% 10px auto;
+  height: 1px;
+  background: rgba(161, 161, 170, 0.22);
+  pointer-events: none;
+}
+
+.shadow-angle-axis-vertical {
+  transform: rotate(90deg);
 }
 
 .shadow-angle-indicator {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 100%;
-  height: 2px;
+  width: 50%;
+  height: 1px;
   transform-origin: 0% 50%;
-  margin-top: -1px;
   pointer-events: none;
+}
+
+.shadow-angle-ray {
+  position: absolute;
+  left: 0;
+  right: 14px;
+  top: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent, #6366f1);
+  transform: translateY(-50%);
 }
 
 .shadow-angle-dot {
   position: absolute;
-  right: 4px;
+  right: 1px;
   top: 50%;
   transform: translateY(-50%);
-  width: 8px;
-  height: 8px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--accent, #6366f1);
-  box-shadow: 0 0 4px rgba(99, 102, 241, 0.5);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 3px 8px rgba(99, 102, 241, 0.35);
 }
 
-.shadow-angle-value {
+.shadow-angle-number {
+  display: grid;
+  gap: 4px;
+  width: 64px;
+}
+
+.shadow-angle-number span {
   font-size: 10px;
   color: var(--text-3, #71717a);
-  font-weight: 500;
+  font-weight: 600;
+  text-align: center;
+}
+
+.shadow-angle-number input {
+  width: 100%;
+  height: 26px;
+  padding: 0 5px;
+  border: 1px solid var(--border, #2e2e38);
+  border-radius: 6px;
+  background: var(--bg-input, #16161c);
+  color: var(--text-1, #f4f4f5);
+  font-size: 11px;
+  text-align: center;
   font-variant-numeric: tabular-nums;
+}
+
+.shadow-angle-presets {
+  display: grid;
+  grid-template-areas:
+    "tl t tr"
+    "l . r"
+    "bl b br";
+  grid-template-columns: repeat(3, 24px);
+  gap: 4px;
+}
+
+.shadow-angle-preset {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border, #2e2e38);
+  border-radius: 5px;
+  background: var(--bg-input, #16161c);
+  color: var(--text-3, #71717a);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.shadow-preset-tl { grid-area: tl; }
+.shadow-preset-t { grid-area: t; }
+.shadow-preset-tr { grid-area: tr; }
+.shadow-preset-l { grid-area: l; }
+.shadow-preset-r { grid-area: r; }
+.shadow-preset-bl { grid-area: bl; }
+.shadow-preset-b { grid-area: b; }
+.shadow-preset-br { grid-area: br; }
+
+.shadow-angle-preset:hover,
+.shadow-angle-preset.active {
+  border-color: var(--accent, #6366f1);
+  background: var(--accent-soft, rgba(99, 102, 241, 0.16));
+  color: var(--accent, #6366f1);
 }
 
 .shadow-sliders {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
