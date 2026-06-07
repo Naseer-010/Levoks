@@ -62,23 +62,13 @@ const getDropClientPoint = (event: DragEndEvent): { x: number; y: number } | nul
 };
 
 const getElementScale = (el: HTMLElement): number => {
-    const transform = window.getComputedStyle(el).transform;
-    if (!transform || transform === "none") return 1;
-
-    const matrixMatch = transform.match(/^matrix\((.+)\)$/);
-    if (matrixMatch) {
-        const values = matrixMatch[1].split(",").map((v) => Number(v.trim()));
-        if (values.length > 0 && Number.isFinite(values[0]) && values[0] > 0) {
-            return values[0];
-        }
+    // Derive effective scale from rendered vs natural dimensions.
+    // This correctly accounts for ancestor transforms (canvas-transform-layer).
+    const rect = el.getBoundingClientRect();
+    const natural = el.offsetWidth;
+    if (natural > 0 && rect.width > 0) {
+        return rect.width / natural;
     }
-
-    const scaleMatch = transform.match(/^scale\((.+)\)$/);
-    if (scaleMatch) {
-        const scale = Number(scaleMatch[1].trim());
-        if (Number.isFinite(scale) && scale > 0) return scale;
-    }
-
     return 1;
 };
 

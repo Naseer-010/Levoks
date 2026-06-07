@@ -5,10 +5,13 @@ import { CONTAINER_TYPES, ElementNode } from "@/types";
 import Renderer from "./Renderer";
 import ContextMenu from "./ContextMenu";
 import { useDroppable } from "@dnd-kit/core";
-import { useRef, useState, useCallback } from "react";
-import { Monitor, Tablet, Smartphone, Globe, Lock } from "lucide-react";
+import { useRef, useState, useCallback, useEffect } from "react";
+import { Monitor, Tablet, Smartphone, Globe, Lock, Maximize2, RotateCcw } from "lucide-react";
 
-const ZOOM_LEVELS = [50, 75, 100, 125, 150];
+const MIN_ZOOM = 10;
+const MAX_ZOOM = 200;
+const ZOOM_STEP = 25;
+const ZOOM_LEVELS = [25, 50, 75, 100, 125, 150, 200];
 const GRID_SIZE = 8;
 const SNAP_THRESHOLD = 6;
 
@@ -22,7 +25,6 @@ const RESOLUTION_PRESETS = [
 
 const Canvas: React.FC = () => {
     const {
-        elementsById,
         rootIds,
         globalRootIds,
         selectElement,
@@ -37,19 +39,26 @@ const Canvas: React.FC = () => {
         activePageId,
         canvasSettings,
         updateCanvasSettings,
-        getElement,
     } = useEditorStore();
+    // ─── Transform matrix state (Figma-style) ───
+    const [panX, setPanX] = useState(0);
+    const [panY, setPanY] = useState(0);
     const [zoom, setZoom] = useState(100);
+    const panRef = useRef({ x: 0, y: 0 });
+    const scaleRef = useRef(1);
+    const workspaceRef = useRef<HTMLDivElement>(null);
     const canvasPageRef = useRef<HTMLDivElement>(null);
     const [snapGuides, setSnapGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] });
     const [selectionBox, setSelectionBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
     const selectionStart = useRef<{ x: number; y: number } | null>(null);
+    const didInitialCenter = useRef(false);
 
     // Canvas height resize state
     const [isResizingHeight, setIsResizingHeight] = useState(false);
     const [pendingHeight, setPendingHeight] = useState<number | null>(null);
     const resizeStartY = useRef<number>(0);
     const resizeStartH = useRef<number>(0);
+    const pinchState = useRef<{ startDistance: number; startZoom: number; startPanX: number; startPanY: number; centerX: number; centerY: number } | null>(null);
 
     // Context menu state
     const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; elementId: string } | null>(null);
@@ -63,6 +72,77 @@ const Canvas: React.FC = () => {
     const activeRes = RESOLUTION_PRESETS.find((r) => r.width === canvasWidth);
     const canvasBackground = String(canvasSettings.backgroundColor || "#ffffff");
     const canvasHasGradient = /gradient\(/i.test(canvasBackground);
+    const visibleCanvasHeight = pendingHeight ?? canvasHeight;
+    const zoomScale = zoom / 100;
+
+    // Sync refs for use in non-passive event listeners
+    useEffect(() => { scaleRef.current = zoomScale; }, [zoomScale]);
+    useEffect(() => { panRef.current = { x: panX, y: panY }; }, [panX, panY]);
+
+    const applyView = useCallback((nextPanX: number, nextPanY: number, nextZoomPct: number) => {
+        const clamped = Math.round(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoomPct)));
+        setPanX(nextPanX);
+        setPanY(nextPanY);
+        setZoom(clamped);
+        panRef.current = { x: nextPanX, y: nextPanY };
+        scaleRef.current = clamped / 100;
+    }, []);
+
+    // Zoom at a specific screen point using world-coordinate math
+    const zoomAtPoint = useCallback((nextZoomPct: number, clientX: number, clientY: number) => {
+        const ws = workspaceRef.current;
+        if (!ws) { applyView(panRef.current.x, panRef.current.y, nextZoomPct); return; }
+        const wsRect = ws.getBoundingClientRect();
+        const mx = clientX - wsRect.left;
+        const my = clientY - wsRect.top;
+        const oldScale = scaleRef.current;
+        // World coords under cursor
+        const wx = (mx - panRef.current.x) / oldScale;
+        const wy = (my - panRef.current.y) / oldScale;
+        const clamped = Math.round(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoomPct)));
+        const newScale = clamped / 100;
+        // Keep same world point under cursor
+        const newPanX = mx - wx * newScale;
+        const newPanY = my - wy * newScale;
+        applyView(newPanX, newPanY, clamped);
+    }, [applyView]);
+
+    const zoomAtPointRef = useRef(zoomAtPoint);
+    useEffect(() => { zoomAtPointRef.current = zoomAtPoint; }, [zoomAtPoint]);
+
+    const zoomAtWorkspaceCenter = useCallback((value: number) => {
+        const ws = workspaceRef.current;
+        if (!ws) { applyView(panRef.current.x, panRef.current.y, value); return; }
+        const rect = ws.getBoundingClientRect();
+        zoomAtPoint(value, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    }, [applyView, zoomAtPoint]);
+
+    const fitCanvasToView = useCallback(() => {
+        const ws = workspaceRef.current;
+        if (!ws) return;
+        const pad = 48;
+        const availW = Math.max(1, ws.clientWidth - pad * 2);
+        const availH = Math.max(1, ws.clientHeight - pad * 2);
+        const fitScale = Math.min(1, availW / canvasWidth, availH / visibleCanvasHeight);
+        const fitZoom = Math.round(fitScale * 100);
+        const s = fitZoom / 100;
+        const newPanX = (ws.clientWidth - canvasWidth * s) / 2;
+        const newPanY = (ws.clientHeight - visibleCanvasHeight * s) / 2;
+        applyView(newPanX, newPanY, fitZoom);
+    }, [applyView, canvasWidth, visibleCanvasHeight]);
+
+    // Center canvas on initial mount
+    useEffect(() => {
+        if (didInitialCenter.current) return;
+        const ws = workspaceRef.current;
+        if (!ws) return;
+        didInitialCenter.current = true;
+        const s = scaleRef.current;
+        const newPanX = (ws.clientWidth - canvasWidth * s) / 2;
+        const newPanY = Math.max(32, (ws.clientHeight - visibleCanvasHeight * s) / 2);
+        applyView(newPanX, newPanY, zoom);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Drag state for moving elements
     const dragState = useRef<{
@@ -84,6 +164,7 @@ const Canvas: React.FC = () => {
         centerX: number;
         centerY: number;
     } | null>(null);
+    const handlePointerUpRef = useRef<((e: PointerEvent) => void) | null>(null);
     const rafRef = useRef<number | null>(null);
     const latestPointRef = useRef<{ x: number; y: number; shiftKey: boolean } | null>(null);
 
@@ -208,7 +289,7 @@ const Canvas: React.FC = () => {
             const latest = latestPointRef.current;
             if (!ds || !latest) return;
 
-            const scale = zoom / 100;
+            const scale = scaleRef.current;
             let dx = (latest.x - ds.startX) / scale;
             let dy = (latest.y - ds.startY) / scale;
             if (latest.shiftKey && ds.dragging) {
@@ -224,8 +305,8 @@ const Canvas: React.FC = () => {
                         return;
                     }
 
-                    const maxX = Math.max(0, parentEl.w - ds.startElW);
-                    const maxY = Math.max(0, parentEl.h - ds.startElH);
+                    const maxX = Math.max(0, parentEl.layout.w - ds.startElW);
+                    const maxY = Math.max(0, parentEl.layout.h - ds.startElH);
                     const rawX = ds.startElX + dx;
                     const rawY = ds.startElY + dy;
                     const overflowLeft = Math.max(0, -rawX);
@@ -268,7 +349,10 @@ const Canvas: React.FC = () => {
                     const snapY = Math.round(newY / GRID_SIZE) * GRID_SIZE;
                     const finalX = Math.abs(snapX - newX) <= SNAP_THRESHOLD ? snapX : newX;
                     const finalY = Math.abs(snapY - newY) <= SNAP_THRESHOLD ? snapY : newY;
-                    const siblings = parentEl.children.filter((el) => el.id !== ds.elementId);
+                    const state = useEditorStore.getState();
+                    const siblings = parentEl.children
+                        .map((id) => state.elementsById[id])
+                        .filter((el): el is ElementNode => Boolean(el) && el.id !== ds.elementId);
                     const snap = getSnap(finalX, finalY, ds.startElW, ds.startElH, siblings);
                     let guideX = snap.guideX;
                     let guideY = snap.guideY;
@@ -336,7 +420,7 @@ const Canvas: React.FC = () => {
                 setSnapGuides({ x: [], y: [] });
             }
         });
-    }, [canvasHeight, canvasWidth, getSnap, moveElement, updateElementPosition, updateElementRotationLive, updateElementSize, zoom]);
+    }, [canvasHeight, canvasWidth, getSnap, moveElement, updateElementPosition, updateElementRotationLive, updateElementSize]);
 
     const handlePointerMove = useCallback((e: PointerEvent) => {
         if (selectionStart.current) {
@@ -390,7 +474,7 @@ const Canvas: React.FC = () => {
         if (ds.dragging) {
             const state = useEditorStore.getState();
             const draggedEl = state.getElement(ds.elementId);
-            const scale = zoom / 100;
+            const scale = scaleRef.current;
 
             if (draggedEl) {
                 let targetContainerId: string | null = null;
@@ -423,9 +507,10 @@ const Canvas: React.FC = () => {
                         const targetIsDescendant = (() => {
                             const stack = [...draggedEl.children];
                             while (stack.length > 0) {
-                                const node = stack.pop()!;
-                                if (node.id === targetContainerId) return true;
-                                stack.push(...node.children);
+                                const nodeId = stack.pop()!;
+                                if (nodeId === targetContainerId) return true;
+                                const node = state.elementsById[nodeId];
+                                if (node) stack.push(...node.children);
                             }
                             return false;
                         })();
@@ -437,8 +522,8 @@ const Canvas: React.FC = () => {
                             if (containerNode && draggedNode) {
                                 const containerRect = containerNode.getBoundingClientRect();
                                 const draggedRect = draggedNode.getBoundingClientRect();
-                                const maxX = Math.max(0, targetContainer.w - draggedEl.w);
-                                const maxY = Math.max(0, targetContainer.h - draggedEl.h);
+                                const maxX = Math.max(0, targetContainer.layout.w - draggedEl.layout.w);
+                                const maxY = Math.max(0, targetContainer.layout.h - draggedEl.layout.h);
                                 const relX = (draggedRect.left - containerRect.left) / scale;
                                 const relY = (draggedRect.top - containerRect.top) / scale;
                                 nextX = Math.min(maxX, Math.max(0, relX));
@@ -459,21 +544,22 @@ const Canvas: React.FC = () => {
                         }
                     }
                 } else if (currentParent?.type === "container") {
-                    const maxX = Math.max(0, currentParent.w - draggedEl.w);
-                    const maxY = Math.max(0, currentParent.h - draggedEl.h);
-                    const clampedX = Math.min(maxX, Math.max(0, draggedEl.x));
-                    const clampedY = Math.min(maxY, Math.max(0, draggedEl.y));
-                    if (clampedX !== draggedEl.x || clampedY !== draggedEl.y) {
+                    const maxX = Math.max(0, currentParent.layout.w - draggedEl.layout.w);
+                    const maxY = Math.max(0, currentParent.layout.h - draggedEl.layout.h);
+                    const clampedX = Math.min(maxX, Math.max(0, draggedEl.layout.x));
+                    const clampedY = Math.min(maxY, Math.max(0, draggedEl.layout.y));
+                    if (clampedX !== draggedEl.layout.x || clampedY !== draggedEl.layout.y) {
                         updateElementPosition(ds.elementId, clampedX, clampedY);
                     }
                 }
             }
         }
 
-    }, [moveElement, updateElement, updateElementPosition, zoom]);
+    }, [moveElement, updateElement, updateElementPosition]);
 
     const handlePointerUp = useCallback((e: PointerEvent) => {
         const ds = dragState.current;
+        const onPointerUp = handlePointerUpRef.current;
         if (!ds && selectionStart.current) {
             const start = selectionStart.current;
             const end = { x: e.clientX, y: e.clientY };
@@ -491,20 +577,145 @@ const Canvas: React.FC = () => {
             selectElements(hits);
             finalizeDrag();
             window.removeEventListener("pointermove", handlePointerMove);
-            window.removeEventListener("pointerup", handlePointerUp);
-            window.removeEventListener("pointercancel", handlePointerUp);
+            if (onPointerUp) {
+                window.removeEventListener("pointerup", onPointerUp);
+                window.removeEventListener("pointercancel", onPointerUp);
+            }
             return;
         }
         if (!ds || e.pointerId !== ds.pointerId) return;
         handleDragEnd({ clientX: e.clientX, clientY: e.clientY });
         window.removeEventListener("pointermove", handlePointerMove);
-        window.removeEventListener("pointerup", handlePointerUp);
-        window.removeEventListener("pointercancel", handlePointerUp);
+        if (onPointerUp) {
+            window.removeEventListener("pointerup", onPointerUp);
+            window.removeEventListener("pointercancel", onPointerUp);
+        }
         finalizeDrag();
     }, [finalizeDrag, handleDragEnd, handlePointerMove, selectElements]);
 
+    useEffect(() => {
+        handlePointerUpRef.current = handlePointerUp;
+    }, [handlePointerUp]);
+
+    // Native non-passive wheel listener — handles BOTH pan and zoom
+    // ctrlKey/metaKey (trackpad pinch) → zoom at cursor
+    // no modifier (two-finger scroll) → pan the canvas
+    useEffect(() => {
+        const ws = workspaceRef.current;
+        if (!ws) return;
+
+        const onWheel = (e: WheelEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (e.ctrlKey || e.metaKey) {
+                // Pinch-to-zoom on trackpad — zoom at cursor
+                const factor = Math.exp(-e.deltaY * 0.004);
+                const currentZoom = Math.round(scaleRef.current * 100);
+                zoomAtPointRef.current(currentZoom * factor, e.clientX, e.clientY);
+            } else {
+                // Two-finger scroll/slide — pan the canvas
+                const { x, y } = panRef.current;
+                const newX = x - e.deltaX;
+                const newY = y - e.deltaY;
+                setPanX(newX);
+                setPanY(newY);
+                panRef.current = { x: newX, y: newY };
+            }
+        };
+
+        ws.addEventListener("wheel", onWheel, { passive: false });
+        return () => ws.removeEventListener("wheel", onWheel);
+    }, []);
+
+    const getTouchMetrics = (touches: React.TouchList) => {
+        const first = touches[0];
+        const second = touches[1];
+        const dx = second.clientX - first.clientX;
+        const dy = second.clientY - first.clientY;
+        return {
+            distance: Math.sqrt(dx * dx + dy * dy),
+            centerX: (first.clientX + second.clientX) / 2,
+            centerY: (first.clientY + second.clientY) / 2,
+        };
+    };
+
+    const handleWorkspaceTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+        if (e.touches.length !== 2) return;
+        e.preventDefault();
+        finalizeDrag();
+        const metrics = getTouchMetrics(e.touches);
+        pinchState.current = {
+            startDistance: metrics.distance,
+            startZoom: Math.round(scaleRef.current * 100),
+            startPanX: panRef.current.x,
+            startPanY: panRef.current.y,
+            centerX: metrics.centerX,
+            centerY: metrics.centerY,
+        };
+    }, [finalizeDrag]);
+
+    const handleWorkspaceTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+        if (e.touches.length !== 2 || !pinchState.current) return;
+        e.preventDefault();
+        const metrics = getTouchMetrics(e.touches);
+        if (pinchState.current.startDistance <= 0) return;
+        const nextZoom = pinchState.current.startZoom * (metrics.distance / pinchState.current.startDistance);
+        zoomAtPoint(nextZoom, metrics.centerX, metrics.centerY);
+    }, [zoomAtPoint]);
+
+    const handleWorkspaceTouchEnd = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+        if (e.touches.length < 2) {
+            pinchState.current = null;
+        }
+    }, []);
+
+    const handleCanvasHeightPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const target = e.currentTarget;
+        target.setPointerCapture(e.pointerId);
+        setIsResizingHeight(true);
+        resizeStartY.current = e.clientY;
+        resizeStartH.current = pendingHeight ?? canvasHeight;
+        let raf: number | null = null;
+        let latestY = e.clientY;
+
+        const applyHeight = () => {
+            raf = null;
+            const scale = scaleRef.current;
+            const dy = (latestY - resizeStartY.current) / Math.max(0.01, scale);
+            setPendingHeight(Math.max(200, Math.round(resizeStartH.current + dy)));
+        };
+
+        const onMove = (ev: PointerEvent) => {
+            ev.preventDefault();
+            latestY = ev.clientY;
+            if (raf === null) raf = requestAnimationFrame(applyHeight);
+        };
+
+        const finish = () => {
+            if (raf !== null) cancelAnimationFrame(raf);
+            applyHeight();
+            setIsResizingHeight(false);
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+            if (target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId);
+            target.removeEventListener("pointermove", onMove);
+            target.removeEventListener("pointerup", finish);
+            target.removeEventListener("pointercancel", finish);
+        };
+
+        document.body.style.cursor = "ns-resize";
+        document.body.style.userSelect = "none";
+        target.addEventListener("pointermove", onMove);
+        target.addEventListener("pointerup", finish);
+        target.addEventListener("pointercancel", finish);
+    }, [canvasHeight, pendingHeight]);
+
     const handlePointerDown = useCallback((e: React.PointerEvent) => {
         if (e.button !== 0) return;
+        if (e.pointerType === "touch") return;
         if (ctxMenu) setCtxMenu(null);
 
         const target = e.target as HTMLElement;
@@ -641,7 +852,7 @@ const Canvas: React.FC = () => {
             window.addEventListener("pointerup", handlePointerUp);
             window.addEventListener("pointercancel", handlePointerUp);
         }
-    }, [selectElement, ctxMenu, updateElement, handlePointerMove, handlePointerUp]);
+    }, [selectElement, toggleSelectElement, ctxMenu, updateElement, handlePointerMove, handlePointerUp]);
 
     return (
         <div className="canvas-area">
@@ -659,133 +870,112 @@ const Canvas: React.FC = () => {
                 </div>
             </div>
 
-            {/* Workspace */}
+            {/* Workspace (viewport — overflow hidden, no native scroll) */}
             <div
+                ref={workspaceRef}
                 className="canvas-workspace"
                 onClick={() => { selectElement(null); setCtxMenu(null); }}
                 onContextMenu={handleContextMenu}
-                style={{ overflowY: "auto", overflowX: "auto" }}
+                /* wheel is handled via native non-passive listener in useEffect */
+                onTouchStart={handleWorkspaceTouchStart}
+                onTouchMove={handleWorkspaceTouchMove}
+                onTouchEnd={handleWorkspaceTouchEnd}
+                onTouchCancel={handleWorkspaceTouchEnd}
             >
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: "60px" }}>
+                {/* Transform layer — single CSS transform for pan + zoom */}
                 <div
-                    ref={setRefs}
-                    className={`canvas-page ${isOver ? "canvas-page-over" : ""}`}
+                    className="canvas-transform-layer"
                     style={{
-                        width: `${canvasWidth}px`,
-                        maxWidth: `${canvasWidth}px`,
-                        minHeight: `${pendingHeight ?? canvasHeight}px`,
-                        height: `${pendingHeight ?? canvasHeight}px`,
-                        transform: `scale(${zoom / 100})`,
-                        transformOrigin: "top center",
-                        background: canvasBackground,
-                        backgroundColor: canvasHasGradient ? undefined : canvasBackground,
-                        overflow: "hidden",
-                    }}
-                    onPointerDown={handlePointerDown}
-                    onClick={(e) => {
-                        if (e.target === e.currentTarget) selectElement(null);
+                        transform: `translate(${panX}px, ${panY}px) scale(${zoomScale})`,
                     }}
                 >
-                    {selectionBox && (
-                        <div
-                            className="selection-box"
-                            style={{
-                                left: `${selectionBox.x}px`,
-                                top: `${selectionBox.y}px`,
-                                width: `${selectionBox.w}px`,
-                                height: `${selectionBox.h}px`,
-                            }}
-                        />
-                    )}
-                    {snapGuides.x.map((x) => (
-                        <div
-                            key={`gx-${x}`}
-                            className="snap-guide snap-guide-vertical"
-                            style={{ left: `${x}px` }}
-                        />
-                    ))}
-                    {snapGuides.y.map((y) => (
-                        <div
-                            key={`gy-${y}`}
-                            className="snap-guide snap-guide-horizontal"
-                            style={{ top: `${y}px` }}
-                        />
-                    ))}
-                    {/* Global elements — rendered on top of every page */}
-                    {globalRootIds.length > 0 && (
-                        <div className="canvas-global-zone canvas-global-top">
-                            <div className="global-zone-label">
-                                <Globe size={10} />
-                                <span>Global</span>
+                    <div
+                        ref={setRefs}
+                        className={`canvas-page ${isOver ? "canvas-page-over" : ""}`}
+                        style={{
+                            width: `${canvasWidth}px`,
+                            maxWidth: `${canvasWidth}px`,
+                            minHeight: `${visibleCanvasHeight}px`,
+                            height: `${visibleCanvasHeight}px`,
+                            background: canvasBackground,
+                            backgroundColor: canvasHasGradient ? undefined : canvasBackground,
+                            overflow: "hidden",
+                        }}
+                        onPointerDown={handlePointerDown}
+                        onClick={(e) => {
+                            if (e.target === e.currentTarget) selectElement(null);
+                        }}
+                    >
+                        {selectionBox && (
+                            <div
+                                className="selection-box"
+                                style={{
+                                    left: `${selectionBox.x}px`,
+                                    top: `${selectionBox.y}px`,
+                                    width: `${selectionBox.w}px`,
+                                    height: `${selectionBox.h}px`,
+                                }}
+                            />
+                        )}
+                        {snapGuides.x.map((x) => (
+                            <div
+                                key={`gx-${x}`}
+                                className="snap-guide snap-guide-vertical"
+                                style={{ left: `${x}px` }}
+                            />
+                        ))}
+                        {snapGuides.y.map((y) => (
+                            <div
+                                key={`gy-${y}`}
+                                className="snap-guide snap-guide-horizontal"
+                                style={{ top: `${y}px` }}
+                            />
+                        ))}
+                        {/* Global elements — rendered on top of every page */}
+                        {globalRootIds.length > 0 && (
+                            <div className="canvas-global-zone canvas-global-top">
+                                <div className="global-zone-label">
+                                    <Globe size={10} />
+                                    <span>Global</span>
+                                </div>
+                                <Renderer elementIds={globalRootIds} isRoot={false} />
                             </div>
-                            <Renderer elementIds={globalRootIds} isRoot={false} />
-                        </div>
-                    )}
+                        )}
 
-                    {/* Page elements */}
-                    {rootIds.length === 0 && globalRootIds.length === 0 ? (
-                        <div className="canvas-empty-state">
-                            <div className="empty-icon">
-                                <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                                    <rect x="6" y="6" width="36" height="36" rx="4" stroke="#d1d5db" strokeWidth="2" strokeDasharray="4 4" />
-                                    <path d="M24 16v16M16 24h16" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" />
-                                </svg>
+                        {/* Page elements */}
+                        {rootIds.length === 0 && globalRootIds.length === 0 ? (
+                            <div className="canvas-empty-state">
+                                <div className="empty-icon">
+                                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                                        <rect x="6" y="6" width="36" height="36" rx="4" stroke="#d1d5db" strokeWidth="2" strokeDasharray="4 4" />
+                                        <path d="M24 16v16M16 24h16" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" />
+                                    </svg>
+                                </div>
+                                <h3>Start Building</h3>
+                                <p>Drag elements from the sidebar or double-click to add</p>
                             </div>
-                            <h3>Start Building</h3>
-                            <p>Drag elements from the sidebar or double-click to add</p>
-                        </div>
-                    ) : (
-                        <Renderer elementIds={rootIds} isRoot={true} />
-                    )}
-                </div>
-
-                {/* ─── Canvas Height Resize Handle ─── */}
-                <div
-                    className={`canvas-height-handle ${isResizingHeight ? "active" : ""}`}
-                    style={{ width: `${canvasWidth * (zoom / 100)}px` }}
-                    onPointerDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const target = e.currentTarget;
-                        target.setPointerCapture(e.pointerId);
-                        setIsResizingHeight(true);
-                        const startY = e.clientY;
-                        const startH = pendingHeight ?? canvasHeight;
-                        const scale = zoom / 100;
-                        let raf = 0;
-                        let latestY = e.clientY;
-                        const update = () => {
-                            const dy = (latestY - startY) / scale;
-                            setPendingHeight(Math.max(200, Math.round(startH + dy)));
-                        };
-                        const onMove = (ev: PointerEvent) => {
-                            latestY = ev.clientY;
-                            cancelAnimationFrame(raf);
-                            raf = requestAnimationFrame(update);
-                        };
-                        const onUp = () => {
-                            cancelAnimationFrame(raf);
-                            update();
-                            setIsResizingHeight(false);
-                            target.releasePointerCapture(e.pointerId);
-                            target.removeEventListener("pointermove", onMove);
-                            target.removeEventListener("pointerup", onUp);
-                        };
-                        target.addEventListener("pointermove", onMove);
-                        target.addEventListener("pointerup", onUp);
-                    }}
-                >
-                    <div className="canvas-height-handle-bar" />
-                </div>
-
-                {/* Save / Cancel prompt */}
-                {pendingHeight !== null && pendingHeight !== canvasHeight && !isResizingHeight && (
-                    <div className="canvas-resize-prompt">
-                        <span className="canvas-resize-label">{pendingHeight}px</span>
-                        <button className="canvas-resize-save" onClick={() => { updateCanvasSettings({ height: pendingHeight }); setPendingHeight(null); }}>Save</button>
-                        <button className="canvas-resize-cancel" onClick={() => setPendingHeight(null)}>Cancel</button>
+                        ) : (
+                            <Renderer elementIds={rootIds} isRoot={true} />
+                        )}
                     </div>
-                )}
+
+                    {/* ─── Canvas Height Resize Handle ─── */}
+                    <div
+                        className={`canvas-height-handle ${isResizingHeight ? "active" : ""}`}
+                        style={{ width: `${canvasWidth}px` }}
+                        onPointerDown={handleCanvasHeightPointerDown}
+                    >
+                        <div className="canvas-height-handle-bar" />
+                    </div>
+
+                    {/* Save / Cancel prompt */}
+                    {pendingHeight !== null && pendingHeight !== canvasHeight && !isResizingHeight && (
+                        <div className="canvas-resize-prompt">
+                            <span className="canvas-resize-label">{pendingHeight}px</span>
+                            <button className="canvas-resize-save" onClick={() => { updateCanvasSettings({ height: pendingHeight }); setPendingHeight(null); }}>Save</button>
+                            <button className="canvas-resize-cancel" onClick={() => setPendingHeight(null)}>Cancel</button>
+                        </div>
+                    )}
                 </div>
 
                 {/* Context Menu */}
@@ -817,13 +1007,29 @@ const Canvas: React.FC = () => {
                     </span>
                 </div>
                 <div className="zoom-controls">
-                    <button onClick={() => setZoom((z) => Math.max(50, z - 25))} className="zoom-btn">−</button>
-                    <select value={zoom} onChange={(e) => setZoom(Number(e.target.value))} className="zoom-select">
+                    <button onClick={() => zoomAtWorkspaceCenter(zoom - ZOOM_STEP)} className="zoom-btn">−</button>
+                    <select value={zoom} onChange={(e) => zoomAtWorkspaceCenter(Number(e.target.value))} className="zoom-select">
+                        {!ZOOM_LEVELS.includes(zoom) && <option value={zoom}>{zoom}%</option>}
                         {ZOOM_LEVELS.map((z) => (
                             <option key={z} value={z}>{z}%</option>
                         ))}
                     </select>
-                    <button onClick={() => setZoom((z) => Math.min(150, z + 25))} className="zoom-btn">+</button>
+                    <button onClick={() => zoomAtWorkspaceCenter(zoom + ZOOM_STEP)} className="zoom-btn">+</button>
+                    <button onClick={() => {
+                        const ws = workspaceRef.current;
+                        if (ws) {
+                            const cx = (ws.clientWidth - canvasWidth) / 2;
+                            const cy = Math.max(32, (ws.clientHeight - visibleCanvasHeight) / 2);
+                            applyView(cx, cy, 100);
+                        } else {
+                            applyView(0, 0, 100);
+                        }
+                    }} className={`zoom-btn zoom-reset-btn ${zoom === 100 ? 'zoom-reset-active' : ''}`} title="Reset to 100%">
+                        <RotateCcw size={13} />
+                    </button>
+                    <button onClick={fitCanvasToView} className="zoom-btn zoom-fit-btn" title="Fit canvas">
+                        <Maximize2 size={13} />
+                    </button>
                 </div>
             </div>
         </div>
